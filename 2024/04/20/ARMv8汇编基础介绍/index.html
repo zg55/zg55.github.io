@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<!-- <script src="https://cdn1.lncld.net/static/js/av-min-1.5.0.js"></script> -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-J5XCF4GCJ8"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-J5XCF4GCJ8');
+</script>
+<title>ARMv8汇编基础介绍</title>
+
+
+        <link rel="stylesheet" href="http://localhost:4000/styles/font.css">
+        <link rel="stylesheet" media="screen and (min-width: 600px)" href="http://localhost:4000/styles/post.css">
+        <link rel="stylesheet" media="screen and (max-width: 600px)" href="http://localhost:4000/styles/post_mobile.css">
+        <link rel="stylesheet" media="screen and (min-width: 600px)" href="http://localhost:4000/styles/navigatebar.css">
+        <link rel="stylesheet" media="screen and (max-width: 600px)" href="http://localhost:4000/styles/navigatebar_mobile.css">
+        <link rel="stylesheet" href="http://localhost:4000/theme/highlight.css">
+    </head>
+    <body>
+        <div class="navigatebar">
+    <div class="navigatebar-button navigatebar-mine">
+        <a href="http://localhost:4000/index.html">Home</a>
+    </div>
+    <div class="navigatebar-button">
+        <a href="http://localhost:4000/tags.html">Tags</a>
+    </div>
+    <div class="navigatebar-button">
+        <a href="http://localhost:4000/feed.xml">Feeds</a>
+    </div>
+    <div class="navigatebar-button navigatebar-about">
+        <a href="http://localhost:4000/about.html">About</a>
+    </div>
+</div>
+
+        <div class="content-area">
+            <div class="title">
+                ARMv8汇编基础介绍
+            </div>
+            <div class="category-area">
+                「
+                <a href="http://localhost:4000/tags.html#ARM">
+                    <div class="category">
+                        ARM
+                    </div>
+                </a>
+                」
+            </div>
+            <div class="char-counter">
+              2024-04-20 5326字
+            </div>
+            <div class="content">
+                <h1 id="armv8汇编基础介绍">ARMv8汇编基础介绍</h1>
+
+<p>在嵌入式Linux开发过程中会经常遇到空指针等内核的Oops报错，会打印一些寄存器的值及调用栈。</p>
+
+<p>当遇到如上情况，那大概率是要上汇编了。涉及到<code class="language-plaintext highlighter-rouge">objdump</code>命令反汇编vmlinux或者对应的.o文件用来分析定位问题点。此文章围绕ARMv8上的汇编基础知识展开介绍。</p>
+
+<blockquote>
+  <p>反汇编指得到汇编代码，反编译是指得到对应语言的源代码。</p>
+</blockquote>
+
+<h2 id="1-寄存器">1 寄存器</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[    9.795823] PC is at rs485_do_tasklet+0x8c/0x11c
+[    9.795827] LR is at rs485_do_tasklet+0x64/0x11c
+[    9.795829] pc : [&lt;ffffff800861c4ec&gt;] lr : [&lt;ffffff800861c4c4&gt;] pstate: 60400145
+[    9.795831] sp : ffffffc07c95bc60
+[    9.795835] x29: ffffffc07c95bc60 x28: 0000000000000006
+[    9.795838] x27: ffffff8009064018 x26: 000000000000000a
+[    9.795842] x25: 0000000000000100 x24: 0000000000000000
+[    9.795845] x23: ffffffc07b5ee170 x22: 0000000000000000
+[    9.795849] x21: ffffff80096bf730 x20: ffffff800944d000
+[    9.795852] x19: 0000000000000060 x18: 0000000000000004
+[    9.795855] x17: 0000007f9e5111c8 x16: ffffff8008215018
+[    9.795859] x15: 0000000000000001 x14: ffffff8008e355ab
+[    9.795862] x13: 0000000000000003 x12: 0000000000000000
+[    9.795865] x11: ffffffc07f305c90 x10: 0000000000000aa0
+[    9.795869] x9 : 0000200000000000 x8 : 0000000000000001
+[    9.795872] x7 : 0000000008000000 x6 : 0000200000000000
+[    9.795876] x5 : 0000000000000000 x4 : 000000000001c200
+[    9.795879] x3 : 0000000000000000 x2 : 0000000000000000
+[    9.795882] x1 : ffffffc07c95bca8 x0 : 0000000000000130
+</code></pre></div></div>
+
+<h3 id="11-通用寄存器">1.1 通用寄存器</h3>
+
+<p>ARMv8存在31个64位通用寄存器。</p>
+
+<p>31 个通用寄存器r0 ~ r30，每个寄存器可以存取一个 64位大小的数。 当使用 x0 - x30访问时，是一个 64位的数；当使用 w0 - w30访问时，是一个 32 位的数，访问的是寄存器的 <strong>低 <code class="language-plaintext highlighter-rouge">32</code> 位</strong>，如图：</p>
+
+<p><img src="/pics/arm/CommonRegister.png" alt="img" /></p>
+
+<h4 id="特殊寄存器">特殊寄存器</h4>
+
+<ul>
+  <li><strong>sp：</strong> (Stack Pointer)，栈顶寄存器，用于保存栈顶地址；</li>
+  <li>
+    <p><strong>fp(x29)：</strong> (Frame Pointer)，为栈基址寄存，用于保存栈底地址；</p>
+  </li>
+  <li><strong>lr(x30)：</strong> (Link Register) ，保存调用跳转指令 <em><code class="language-plaintext highlighter-rouge">bl</code></em> 指令的下一条指令的内存地址；</li>
+  <li><strong>pc：</strong>保存将要执行的指令的地址。</li>
+</ul>
+
+<h2 id="2-指令">2 指令</h2>
+
+<h4 id="指令读取">指令读取</h4>
+
+<p>在 <code class="language-plaintext highlighter-rouge">arm64</code> 架构中，每个指令读取都是 <em>64</em> 位，即 <strong><code class="language-plaintext highlighter-rouge">8</code>字节 空间</strong>。</p>
+
+<h4 id="arm64-约定一般来说">arm64 约定（一般来说）</h4>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">x0 ~ x7</code> 分别会存放方法的前 8 个参数；如果参数个数超过了8个，多余的参数会存在栈上，新方法会通过栈来读取。</li>
+  <li>方法的返回值一般都在 x0 上；如果方法返回值是一个较大的数据结构时，结果会存在 x8 执行的地址上。</li>
+</ul>
+
+<h3 id="21-指令介绍">2.1 指令介绍</h3>
+
+<ul>
+  <li>
+    <p><strong>mov：</strong> 将某一寄存器的值复制到另一寄存器（只能用于寄存器与寄存器或者寄存器与常量之间传值，不能用于内存地址），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mov x1, x0 							; 将寄存器 x0 的值复制到寄存器 x1 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>add：</strong> 将某一寄存器的值和另一寄存器的值 <em>相加</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>add x0, x0, #1 					; 将寄存器 x0 的值和常量 1 相加后保存在寄存器 x0 中 
+add x0, x1, x2 					; 将寄存器 x1 和 x2 的值相加后保存到寄存器 x0 中 
+add x0, x1, [x2] 				; 将寄存器 x1 的值加上寄存器 x2 的值作为地址，再取该内存地址的内容放入寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>sub：</strong> 将某一寄存器的值和另一寄存器的值 <em>相减</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sub x0, x1, x2 					; 将寄存器 x1 和 x2 的值相减后保存到寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>mul：</strong>将某一寄存器的值和另一个寄存器的值 <em>相乘</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mul x0, x1, x2  				; 将寄存器 x1 和 x2 的值相乘后结果保存到寄存器 x0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>sdiv：</strong>（有符号数，对应 <strong>udiv</strong>: 无符号数）将某一寄存器的值和另一个寄存器的值 <em>相除</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sdiv x0, x1, x2 				; 将寄存器 x1 和 x2 的值相除后结果保存到寄存器 x0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>and：</strong> 将某一寄存器的值和另一寄存器的值 <em>按位与</em> 并将结果保存到另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>and x0, x0, #0xf 				; 将寄存器 x0 的值和常量 0xf 按位与后保存到寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>orr：</strong> 将某一寄存器的值和另一寄存器的值 <em>按位或</em> 并将结果保存到另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>orr x0, x0, #9 					; 将寄存器 x0 的值和常量 9 按位或后保存到寄存器 x0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>eor：</strong> 将某一寄存器的值和另一寄存器的值 <em>按位异或</em> 并将结果保存到另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>eor x0, x0, #0xf 				; 将寄存器 x0 的值和常量 0xf 按位异或后保存到寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>str：</strong> (store register) 将寄存器中的值写入到内存中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>str w9, [sp, #0x8] 			; 将寄存器 w9 中的值保存到栈内存 [sp + 0x8] 处 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>strb：</strong> (store register byte) 将寄存器中的值写入到内存中（只存储一个字节），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>strb w8, [sp, #7]				; 将寄存器 w8 中的低 1 字节的值保存到栈内存 [sp + 7] 处 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldr：</strong> (load register) 将内存中的值读取到寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldr x0, [x1] 						; 将寄存器 x1 的值作为地址，取该内存地址的值放入寄存器 x0 中 
+ldr w8, [sp, #0x8] 			; 将栈内存 [sp + 0x8] 处的值读取到 w8 寄存器中 
+ldr x0, [x1, #4]! 			; 将寄存器 x1 的值加上 4 作为内存地址, 取该内存地址的值放入寄存器 x0 中, 然后将寄存器 x1 的值加上 4 放入寄存器 x1 中 
+ldr x0, [x1], #4 				; 将寄存器 x1 的值作为内存地址，取内该存地址的值放入寄存器 x0 中, 再将寄存器 x1 的值加上 4 放入寄存器 x1 中 
+ldr x0, [x1, x2] 				; 将寄存器 x1 和寄存器 x2 的值相加作为地址，取该内存地址的值放入寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldrsb：</strong> (load register byte) 将内存中的值（只读取一个字节）读取到寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldrsb	w8, [sp, #7]			; 将栈内存 [sp + 7] 出的 低 1 字节的值读取到寄存器 w8 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>stur：</strong>同 <code class="language-plaintext highlighter-rouge">str</code> 将寄存器中的值写入到内存中（一般用于 <code class="language-plaintext highlighter-rouge">负</code> 地址运算中），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>stur w10, [x29, #-0x4] 	; 将寄存器 w10 中的值保存到栈内存 [x29 - 0x04] 处 	
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldur：</strong> 同 <code class="language-plaintext highlighter-rouge">ldr</code> 将内存中的值读取到寄存器中（一般用于 <code class="language-plaintext highlighter-rouge">负</code> 地址运算中），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldur w8, [x29, #-0x4]   ; 将栈内存 [x29 - 0x04] 处的值读取到 w8 寄存器中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>stp：</strong> 入栈指令（<code class="language-plaintext highlighter-rouge">str</code> 的变种指令，可以同时操作两个寄存器），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>stp x29, x30, [sp, #0x10] 	; 将 x29, x30 的值存入 sp 偏移 16 个字节的位置 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldp：</strong> 出栈指令（<code class="language-plaintext highlighter-rouge">ldr</code> 的变种指令，可以同时操作两个寄存器），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldp x29, x30, [sp, #0x10] 	; 将 sp 偏移 16 个字节的值取出来，存入寄存器 x29 和寄存器 x30 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>scvtf：</strong> (Signed Convert To Float)带符号 <em>定点数</em> 转换为 <em>浮点数</em>，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>scvtf	d1, w0			; 将寄存器 w0 的值(顶点数，转化成 浮点数) 保存到 向量寄存器/浮点寄存器 d1 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>fcvtzs：</strong>(Float Convert To Zero Signed)<em>浮点数</em> 转化为 <em>定点数</em> （舍入为0），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>fcvtzs w0, s0			; 将向量寄存器 s0 的值(浮点数，转换成 定点数)保存到寄存器 w0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>cbz：</strong> 和 0 比较（Compare），如果结果为零（Zero）就转移（只能跳到后面的指令），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cbz  x8, loc_1800b4530	; 将寄存器 x8 的值和 0 比较，如果结果为 “0” 则跳转到 ‘loc_1800b4530’ 标签处开始指令
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>cbnz：</strong> 和非 0 比较（Compare），如果结果非零（Non Zero）就转移（只能跳到后面的指令），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cbnz  x9, loc_1800b4530	; 将寄存器 x9 的值和 0 比较，如果结果为 “非 0” 则跳转到 ‘loc_1800b4530’ 标签处开始指令
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>cmp：</strong> 比较指令，相当于 <code class="language-plaintext highlighter-rouge">subs</code>，影响程序状态寄存器 <em>CPSR</em> ;</p>
+  </li>
+  <li>
+    <p><strong>cset：</strong>比较指令，满足条件，则并置 <code class="language-plaintext highlighter-rouge">1</code>，否则置 <code class="language-plaintext highlighter-rouge">0</code> ，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cmp	 w8, #2    	; 将寄存器 w8 的值和常量 2 进行比较
+cset w8, gt			; 如果是大于(grater than)，则将寄存器 w8 的值设置为 1，否则设置为 0
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>LSL：</strong> 逻辑左移</p>
+  </li>
+  <li>
+    <p><strong>LSR：</strong> 逻辑右移</p>
+  </li>
+  <li>
+    <p><strong>ASR：</strong> 算术右移</p>
+  </li>
+  <li>
+    <p><strong>ROR：</strong> 循环右移</p>
+  </li>
+  <li>
+    <p><strong>adrp：</strong> 用来定位数据段中的数据用, 因为 <em>aslr</em> 会导致代码及数据的地址随机化, 用 <em>adrp</em> 来根据 pc指针做辅助定位。指令计算出指定标签的地址的页表基地址，并将这个基地址的高20位加载到目标寄存器中。由于 ARMv8 架构采用了 4KB 对齐的页表（Page），因此 <code class="language-plaintext highlighter-rouge">adrp</code> 指令的目的是为了加载目标标签所在页面的起始地址，而不是标签本身的地址。</p>
+  </li>
+  <li>
+    <p><strong>b：</strong> （branch）跳转到某地址（无返回）, 不会改变 <em>lr (x30)</em> 寄存器的值；一般是本方法内的跳转，如 <code class="language-plaintext highlighter-rouge">while</code> 循环，<code class="language-plaintext highlighter-rouge">if else</code> 等 ，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>b	LBB0_1				; 直接跳转到标签 ‘LLB0_1’ 处开始执行
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>bl：</strong> 跳转到某地址（有返回），先将下一指令地址（即函数返回地址）保存到寄存器 <em>lr</em> (x30)中，再进行跳转 ；一般用于不同方法直接的调用 ，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bl 0x100cfa754	; 先将下一指令地址（‘0x100cfa754’ 函数调用后的返回地址）保存到寄存器 ‘lr’ 中，然后再调用 ‘0x100cfa754’ 函数
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>blr：</strong> 跳转到 <code class="language-plaintext highlighter-rouge">某寄存器</code> (的值)指向的地址（有返回），先将下一指令地址（即函数返回地址）保存到寄存器 <em>lr</em> (x30)中，再进行跳转 ；如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>blr x20					; 先将下一指令地址（‘x20’指向的函数调用后的返回地址）保存到寄存器 ‘lr’ 中，然后再调用 ‘x20’ 指向的函数
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>br：</strong> 跳转到某寄存器(的值)指向的地址（无返回）, 不会改变 <em>lr (x30)</em> 寄存器的值。</p>
+  </li>
+  <li>
+    <p><strong>brk:</strong> 可以理解为跳转指令特殊的一种。</p>
+  </li>
+  <li>
+    <p><strong>ret：</strong> 子程序（函数调用）返回指令，返回地址已默认保存在寄存器 <em>lr</em> (x30) 中</p>
+  </li>
+</ul>
+
+<h2 id="3-实际案例分析">3 实际案例分析</h2>
+<hr />
+
+<blockquote>
+  <p>每个函数调用，都会有 <strong>入栈</strong> 和 <strong>出栈</strong> 操作。</p>
+</blockquote>
+
+<p>编写一个Demo程序，实现打印字符串，如下：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">//test.c</span>
+<span class="cp">#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp">
+</span>
+<span class="kt">void</span> <span class="nf">TestPushAndPop</span><span class="p">()</span>
+<span class="p">{</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">"Push an Pop !"</span><span class="p">);</span>
+<span class="p">}</span>	
+</code></pre></div></div>
+
+<p>使用gcc编译成汇编文件：<code class="language-plaintext highlighter-rouge">aarch64-linux-gnu-gcc -S -o test.s test.c</code></p>
+
+<pre><code class="language-asm">; test.s
+        .arch armv8-a	;架构
+        .file   "test.c"	;文件名称
+        .text	
+        .section        .rodata	;数据放到只读数据段
+        .align  3	;2^3对齐，8字节对齐
+.LC0:
+        .string "Push an Pop !"	;存储了一个字符串常量
+        .text 
+        .align  2
+        .global TestPushAndPop ;全局符号
+        .type   TestPushAndPop, %function
+TestPushAndPop: #label
+        stp     x29, x30, [sp, -16]! ;入栈指令 将x29,x30中的值存入sp(栈底)地址减16byte的位置 
+        add     x29, sp, 0	;将当前栈指针 sp 的值赋给寄存器 x29，即建立当前栈帧。
+        adrp    x0, .LC0 ;获取.LC0的基地址，并将这个基地址的高20位加载到目标寄存器x0中。
+        add     x0, x0, :lo12:.LC0
+        bl      printf	;调用 printf 函数，将寄存器 x0 中保存的字符串地址作为参数传递给 printf 函数。
+        nop	;空操作，用于占位，没有实际作用。
+        ldp     x29, x30, [sp], 16  ; 将栈中的值取出存放到x29, x30
+        ret	;返回
+        .size   TestPushAndPop, .-TestPushAndPop
+        .ident  "GCC: (Ubuntu/Linaro 7.5.0-3ubuntu1~18.04) 7.5.0"
+        .section        .note.GNU-stack,"",@progbits
+</code></pre>
+
+<p><strong>注意</strong>：对栈的  分配/释放  操作只会对栈指针做加减法, 而不会对栈内存中的内容做任何修改(也不会把释
+放的栈空间设置为 0)。</p>
+
+
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<!-- <script src="https://cdn1.lncld.net/static/js/av-min-1.5.0.js"></script> -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-J5XCF4GCJ8"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-J5XCF4GCJ8');
+</script>
+<title>Python3.6.9移植到i.MX6ULL</title>
+
+
+        <link rel="stylesheet" href="http://localhost:4000/styles/font.css">
+        <link rel="stylesheet" media="screen and (min-width: 600px)" href="http://localhost:4000/styles/post.css">
+        <link rel="stylesheet" media="screen and (max-width: 600px)" href="http://localhost:4000/styles/post_mobile.css">
+        <link rel="stylesheet" media="screen and (min-width: 600px)" href="http://localhost:4000/styles/navigatebar.css">
+        <link rel="stylesheet" media="screen and (max-width: 600px)" href="http://localhost:4000/styles/navigatebar_mobile.css">
+        <link rel="stylesheet" href="http://localhost:4000/theme/highlight.css">
+    </head>
+    <body>
+        <div class="navigatebar">
+    <div class="navigatebar-button navigatebar-mine">
+        <a href="http://localhost:4000/index.html">Home</a>
+    </div>
+    <div class="navigatebar-button">
+        <a href="http://localhost:4000/tags.html">Tags</a>
+    </div>
+    <div class="navigatebar-button">
+        <a href="http://localhost:4000/feed.xml">Feeds</a>
+    </div>
+    <div class="navigatebar-button navigatebar-about">
+        <a href="http://localhost:4000/about.html">About</a>
+    </div>
+</div>
+
+        <div class="content-area">
+            <div class="title">
+                Python3.6.9移植到i.MX6ULL
+            </div>
+            <div class="category-area">
+                「
+                <a href="http://localhost:4000/tags.html#porting">
+                    <div class="category">
+                        porting
+                    </div>
+                </a>
+                」
+            </div>
+            <div class="char-counter">
+              2024-04-15 2067字
+            </div>
+            <div class="content">
+                <h1 id="移植python36到imx6ull">移植Python3.6到i.MX6ULL</h1>
+
+<h2 id="前期准备">前期准备</h2>
+
+<p>ARM平台: imx6ull linux 4.1.15<br />
+主机环境: Ubuntu 18.04 x86_64 (虚拟机)</p>
+
+<h2 id="移植流程">移植流程</h2>
+
+<ol>
+  <li>确定配置好交叉编译环境。<br />
+注意：如果未安装则安装SDK<code class="language-plaintext highlighter-rouge">sudo ./fsl-imx-x11-glibc-x86_64-meta-toolchain-qt5-cortexa7hf-neon-toolchain-4.1.15-2.0.0.sh</code></li>
+  <li>Python官网下载Python3.6。 <br />
+下载地址：<a href="https://www.python.org/downloads/source/">Python Source</a></li>
+  <li>将压缩包<code class="language-plaintext highlighter-rouge">Python-3.6.9.tgz</code>解压到Ubuntu18系统下的目录下。<br />
+<code class="language-plaintext highlighter-rouge">tar xvf Python-3.6.9.tgz</code></li>
+  <li>进入到<code class="language-plaintext highlighter-rouge">Python-3.6.9</code>文件夹下,并创建两个文件夹<code class="language-plaintext highlighter-rouge">build-arm</code>和<code class="language-plaintext highlighter-rouge">build-install</code>。
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">cd </span>Python-3.6.9
+<span class="nb">mkdir </span>build-arm build-install
+</code></pre></div>    </div>
+  </li>
+  <li>编译安装PC端的Python3.6.9。（Ubuntu18默认自带Python3.6.9，可以跳过此步，此文在移植的时候没有跳过这一步。如果系统安装的Python版本高于需要编译的版本则可以跳过，如果系统版本低于将要编译的版本则不能跳过）
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./configure
+make
+<span class="nb">sudo </span>make <span class="nb">install</span> 
+</code></pre></div>    </div>
+    <p><em>注意：</em><code class="language-plaintext highlighter-rouge">make</code>无需使用sudo,而<code class="language-plaintext highlighter-rouge">make install</code>需要sudo，不然没有权限安装Python到系统。</p>
+  </li>
+  <li>清除编译产生的临时文件。<br />
+<code class="language-plaintext highlighter-rouge">sudo make clean</code></li>
+  <li>交叉编译-配置Makefile.
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">cd </span>build-arm
+<span class="nb">.</span> /opt/fsl-imx-x11/4.1.15-2.0.0/environment-setup-cortexa7hf-neon-poky-linux-gnueabi
+<span class="c"># 此处CONFIG_SITE环境变量如果不加入则会在configure的时候打印出错 "#error LONG_SIZE"</span>
+<span class="nb">echo </span><span class="nv">ac_cv_file__dev_ptmx</span><span class="o">=</span>no <span class="o">&gt;</span> config.site
+<span class="nb">echo </span><span class="nv">ac_cv_file__dev_ptc</span><span class="o">=</span>no <span class="o">&gt;&gt;</span> config.site
+<span class="nb">export </span><span class="nv">CONFIG_SITE</span><span class="o">=</span>config.site
+<span class="c"># 配置参数</span>
+<span class="c"># --build=编译该软件所使用的平台,交叉编译环境根据系统而定，Ubuntu18选择x86_64-linux,如果系统使用的是Ubuntu的32位版本，可以配置成i386</span>
+<span class="c"># --host 该软件将运行的平台</span>
+<span class="c"># --target 该软件所处理的目标平台</span>
+<span class="c"># --prefix 文件安装的位置</span>
+<span class="c"># --silent 选项配置后终端不会打印详细的过程。</span>
+../configure <span class="se">\</span>
+<span class="nt">--host</span><span class="o">=</span>arm-poky-linux-gnueabi <span class="se">\</span>
+<span class="nt">--build</span><span class="o">=</span>x86_64-linux <span class="se">\</span>
+<span class="nt">--target</span><span class="o">=</span>arm-poky-linux-gnueabi <span class="se">\</span>
+<span class="nt">--disable-ipv6</span> <span class="se">\</span>
+<span class="nt">--prefix</span><span class="o">=</span>/home/neo/Desktop/fcu1104/Python-3.6.9/build-install <span class="se">\</span>
+<span class="nt">--enable-shared</span> <span class="nt">--enable-optimizations</span>
+</code></pre></div>    </div>
+  </li>
+  <li>添加ssl及zlib依赖的支持。已经在yocoto中拷贝出相应的文件。修改Setup文件<code class="language-plaintext highlighter-rouge">vi Modules/Setup</code>修改如下。
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">#替换相关字段</span>
+<span class="nv">SSL</span><span class="o">=</span>/home/neo/Desktop/fcu1104/python3/openssl/usr
+_ssl _ssl.c <span class="se">\</span>
+     <span class="nt">-DUSE_SSL</span> <span class="nt">-I</span><span class="si">$(</span>SSL<span class="si">)</span>/include <span class="nt">-I</span><span class="si">$(</span>SSL<span class="si">)</span>/include/openssl <span class="se">\</span>
+     <span class="nt">-L</span><span class="si">$(</span>SSL<span class="si">)</span>/lib <span class="nt">-lssl</span> <span class="nt">-lcrypto</span>
+<span class="nv">mypath</span><span class="o">=</span>/home/neo/Desktop/fcu1104/python3/zlib
+zlib zlibmodule.c <span class="nt">-I</span><span class="si">$(</span>prefix<span class="si">)</span>/include <span class="nt">-L</span><span class="si">$(</span>mypath<span class="si">)</span>/lib <span class="nt">-lz</span>
+</code></pre></div>    </div>
+  </li>
+  <li>编译并安装。
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>make 
+<span class="c"># make install过程中</span>
+make <span class="nb">install</span>
+</code></pre></div>    </div>
+  </li>
+</ol>
+
+<h2 id="问题汇总">问题汇总</h2>
+
+<ol>
+  <li>
+    <p>问题：使用交叉编译环境编译时报错<code class="language-plaintext highlighter-rouge">error: #error "LONG_BIT definition appears wrong for platform (bad gcc/glibc config?)."</code><br />
+解答：是因为没有配置CONFIG_SITE环境变量导致数据类型中的long型在configure时配置成了8Byte，而ARM环境上long型占用4Byte。参考：<a href="https://stackoverflow.com/questions/33745187/python-compilation-error-long-bit-definition-appears-wrong-for-platform/45971022">LONG_BIT</a></p>
+  </li>
+  <li>
+    <p>问题：<code class="language-plaintext highlighter-rouge">make install</code>命令时报错<code class="language-plaintext highlighter-rouge">subprocess.CalledProcessError: Command ‘(‘lsb_release’, ‘-a’)’ returned non-zero exit status 1.</code>
+解答：执行命令rm -rf /usr/bin/lsb_release可以解决这个问题，此时需要make clean下，然后再次执行make &amp; make install进行编译安装。</p>
+  </li>
+</ol>
+
+<h2 id="参考链接">参考链接</h2>
+
+<p><a href="https://blog.csdn.net/cyd411/article/details/100009336">python交叉编译移植到ARM</a><br />
+<a href="https://blog.csdn.net/yyw794/article/details/78059102">python移植到arm的单板</a>
+<a href="https://blog.csdn.net/whahu1989/article/details/86482669">交叉编译Python3.6</a>
+<a href="https://blog.csdn.net/u012230668/article/details/89206857">python3.7移植到ARM开发板</a></p>
+
+            </div>
+        </div>
+    </body>
+</html>

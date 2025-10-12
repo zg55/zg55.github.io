@@ -1,0 +1,614 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.4.1">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2025-10-11T23:44:15+08:00</updated><id>http://localhost:4000/feed.xml</id><entry><title type="html">ARMv8汇编基础介绍</title><link href="http://localhost:4000/2024/04/20/ARMv8%E6%B1%87%E7%BC%96%E5%9F%BA%E7%A1%80%E4%BB%8B%E7%BB%8D/" rel="alternate" type="text/html" title="ARMv8汇编基础介绍" /><published>2024-04-20T00:00:00+08:00</published><updated>2024-04-20T00:00:00+08:00</updated><id>http://localhost:4000/2024/04/20/ARMv8%E6%B1%87%E7%BC%96%E5%9F%BA%E7%A1%80%E4%BB%8B%E7%BB%8D</id><content type="html" xml:base="http://localhost:4000/2024/04/20/ARMv8%E6%B1%87%E7%BC%96%E5%9F%BA%E7%A1%80%E4%BB%8B%E7%BB%8D/"><![CDATA[<h1 id="armv8汇编基础介绍">ARMv8汇编基础介绍</h1>
+
+<p>在嵌入式Linux开发过程中会经常遇到空指针等内核的Oops报错，会打印一些寄存器的值及调用栈。</p>
+
+<p>当遇到如上情况，那大概率是要上汇编了。涉及到<code class="language-plaintext highlighter-rouge">objdump</code>命令反汇编vmlinux或者对应的.o文件用来分析定位问题点。此文章围绕ARMv8上的汇编基础知识展开介绍。</p>
+
+<blockquote>
+  <p>反汇编指得到汇编代码，反编译是指得到对应语言的源代码。</p>
+</blockquote>
+
+<h2 id="1-寄存器">1 寄存器</h2>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>[    9.795823] PC is at rs485_do_tasklet+0x8c/0x11c
+[    9.795827] LR is at rs485_do_tasklet+0x64/0x11c
+[    9.795829] pc : [&lt;ffffff800861c4ec&gt;] lr : [&lt;ffffff800861c4c4&gt;] pstate: 60400145
+[    9.795831] sp : ffffffc07c95bc60
+[    9.795835] x29: ffffffc07c95bc60 x28: 0000000000000006
+[    9.795838] x27: ffffff8009064018 x26: 000000000000000a
+[    9.795842] x25: 0000000000000100 x24: 0000000000000000
+[    9.795845] x23: ffffffc07b5ee170 x22: 0000000000000000
+[    9.795849] x21: ffffff80096bf730 x20: ffffff800944d000
+[    9.795852] x19: 0000000000000060 x18: 0000000000000004
+[    9.795855] x17: 0000007f9e5111c8 x16: ffffff8008215018
+[    9.795859] x15: 0000000000000001 x14: ffffff8008e355ab
+[    9.795862] x13: 0000000000000003 x12: 0000000000000000
+[    9.795865] x11: ffffffc07f305c90 x10: 0000000000000aa0
+[    9.795869] x9 : 0000200000000000 x8 : 0000000000000001
+[    9.795872] x7 : 0000000008000000 x6 : 0000200000000000
+[    9.795876] x5 : 0000000000000000 x4 : 000000000001c200
+[    9.795879] x3 : 0000000000000000 x2 : 0000000000000000
+[    9.795882] x1 : ffffffc07c95bca8 x0 : 0000000000000130
+</code></pre></div></div>
+
+<h3 id="11-通用寄存器">1.1 通用寄存器</h3>
+
+<p>ARMv8存在31个64位通用寄存器。</p>
+
+<p>31 个通用寄存器r0 ~ r30，每个寄存器可以存取一个 64位大小的数。 当使用 x0 - x30访问时，是一个 64位的数；当使用 w0 - w30访问时，是一个 32 位的数，访问的是寄存器的 <strong>低 <code class="language-plaintext highlighter-rouge">32</code> 位</strong>，如图：</p>
+
+<p><img src="/pics/arm/CommonRegister.png" alt="img" /></p>
+
+<h4 id="特殊寄存器">特殊寄存器</h4>
+
+<ul>
+  <li><strong>sp：</strong> (Stack Pointer)，栈顶寄存器，用于保存栈顶地址；</li>
+  <li>
+    <p><strong>fp(x29)：</strong> (Frame Pointer)，为栈基址寄存，用于保存栈底地址；</p>
+  </li>
+  <li><strong>lr(x30)：</strong> (Link Register) ，保存调用跳转指令 <em><code class="language-plaintext highlighter-rouge">bl</code></em> 指令的下一条指令的内存地址；</li>
+  <li><strong>pc：</strong>保存将要执行的指令的地址。</li>
+</ul>
+
+<h2 id="2-指令">2 指令</h2>
+
+<h4 id="指令读取">指令读取</h4>
+
+<p>在 <code class="language-plaintext highlighter-rouge">arm64</code> 架构中，每个指令读取都是 <em>64</em> 位，即 <strong><code class="language-plaintext highlighter-rouge">8</code>字节 空间</strong>。</p>
+
+<h4 id="arm64-约定一般来说">arm64 约定（一般来说）</h4>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">x0 ~ x7</code> 分别会存放方法的前 8 个参数；如果参数个数超过了8个，多余的参数会存在栈上，新方法会通过栈来读取。</li>
+  <li>方法的返回值一般都在 x0 上；如果方法返回值是一个较大的数据结构时，结果会存在 x8 执行的地址上。</li>
+</ul>
+
+<h3 id="21-指令介绍">2.1 指令介绍</h3>
+
+<ul>
+  <li>
+    <p><strong>mov：</strong> 将某一寄存器的值复制到另一寄存器（只能用于寄存器与寄存器或者寄存器与常量之间传值，不能用于内存地址），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mov x1, x0 							; 将寄存器 x0 的值复制到寄存器 x1 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>add：</strong> 将某一寄存器的值和另一寄存器的值 <em>相加</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>add x0, x0, #1 					; 将寄存器 x0 的值和常量 1 相加后保存在寄存器 x0 中 
+add x0, x1, x2 					; 将寄存器 x1 和 x2 的值相加后保存到寄存器 x0 中 
+add x0, x1, [x2] 				; 将寄存器 x1 的值加上寄存器 x2 的值作为地址，再取该内存地址的内容放入寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>sub：</strong> 将某一寄存器的值和另一寄存器的值 <em>相减</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sub x0, x1, x2 					; 将寄存器 x1 和 x2 的值相减后保存到寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>mul：</strong>将某一寄存器的值和另一个寄存器的值 <em>相乘</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>mul x0, x1, x2  				; 将寄存器 x1 和 x2 的值相乘后结果保存到寄存器 x0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>sdiv：</strong>（有符号数，对应 <strong>udiv</strong>: 无符号数）将某一寄存器的值和另一个寄存器的值 <em>相除</em> 并将结果保存在另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>sdiv x0, x1, x2 				; 将寄存器 x1 和 x2 的值相除后结果保存到寄存器 x0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>and：</strong> 将某一寄存器的值和另一寄存器的值 <em>按位与</em> 并将结果保存到另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>and x0, x0, #0xf 				; 将寄存器 x0 的值和常量 0xf 按位与后保存到寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>orr：</strong> 将某一寄存器的值和另一寄存器的值 <em>按位或</em> 并将结果保存到另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>orr x0, x0, #9 					; 将寄存器 x0 的值和常量 9 按位或后保存到寄存器 x0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>eor：</strong> 将某一寄存器的值和另一寄存器的值 <em>按位异或</em> 并将结果保存到另一寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>eor x0, x0, #0xf 				; 将寄存器 x0 的值和常量 0xf 按位异或后保存到寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>str：</strong> (store register) 将寄存器中的值写入到内存中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>str w9, [sp, #0x8] 			; 将寄存器 w9 中的值保存到栈内存 [sp + 0x8] 处 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>strb：</strong> (store register byte) 将寄存器中的值写入到内存中（只存储一个字节），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>strb w8, [sp, #7]				; 将寄存器 w8 中的低 1 字节的值保存到栈内存 [sp + 7] 处 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldr：</strong> (load register) 将内存中的值读取到寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldr x0, [x1] 						; 将寄存器 x1 的值作为地址，取该内存地址的值放入寄存器 x0 中 
+ldr w8, [sp, #0x8] 			; 将栈内存 [sp + 0x8] 处的值读取到 w8 寄存器中 
+ldr x0, [x1, #4]! 			; 将寄存器 x1 的值加上 4 作为内存地址, 取该内存地址的值放入寄存器 x0 中, 然后将寄存器 x1 的值加上 4 放入寄存器 x1 中 
+ldr x0, [x1], #4 				; 将寄存器 x1 的值作为内存地址，取内该存地址的值放入寄存器 x0 中, 再将寄存器 x1 的值加上 4 放入寄存器 x1 中 
+ldr x0, [x1, x2] 				; 将寄存器 x1 和寄存器 x2 的值相加作为地址，取该内存地址的值放入寄存器 x0 中 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldrsb：</strong> (load register byte) 将内存中的值（只读取一个字节）读取到寄存器中，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldrsb	w8, [sp, #7]			; 将栈内存 [sp + 7] 出的 低 1 字节的值读取到寄存器 w8 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>stur：</strong>同 <code class="language-plaintext highlighter-rouge">str</code> 将寄存器中的值写入到内存中（一般用于 <code class="language-plaintext highlighter-rouge">负</code> 地址运算中），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>stur w10, [x29, #-0x4] 	; 将寄存器 w10 中的值保存到栈内存 [x29 - 0x04] 处 	
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldur：</strong> 同 <code class="language-plaintext highlighter-rouge">ldr</code> 将内存中的值读取到寄存器中（一般用于 <code class="language-plaintext highlighter-rouge">负</code> 地址运算中），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldur w8, [x29, #-0x4]   ; 将栈内存 [x29 - 0x04] 处的值读取到 w8 寄存器中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>stp：</strong> 入栈指令（<code class="language-plaintext highlighter-rouge">str</code> 的变种指令，可以同时操作两个寄存器），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>stp x29, x30, [sp, #0x10] 	; 将 x29, x30 的值存入 sp 偏移 16 个字节的位置 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>ldp：</strong> 出栈指令（<code class="language-plaintext highlighter-rouge">ldr</code> 的变种指令，可以同时操作两个寄存器），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ldp x29, x30, [sp, #0x10] 	; 将 sp 偏移 16 个字节的值取出来，存入寄存器 x29 和寄存器 x30 
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>scvtf：</strong> (Signed Convert To Float)带符号 <em>定点数</em> 转换为 <em>浮点数</em>，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>scvtf	d1, w0			; 将寄存器 w0 的值(顶点数，转化成 浮点数) 保存到 向量寄存器/浮点寄存器 d1 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>fcvtzs：</strong>(Float Convert To Zero Signed)<em>浮点数</em> 转化为 <em>定点数</em> （舍入为0），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>fcvtzs w0, s0			; 将向量寄存器 s0 的值(浮点数，转换成 定点数)保存到寄存器 w0 中
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>cbz：</strong> 和 0 比较（Compare），如果结果为零（Zero）就转移（只能跳到后面的指令），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cbz  x8, loc_1800b4530	; 将寄存器 x8 的值和 0 比较，如果结果为 “0” 则跳转到 ‘loc_1800b4530’ 标签处开始指令
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>cbnz：</strong> 和非 0 比较（Compare），如果结果非零（Non Zero）就转移（只能跳到后面的指令），如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cbnz  x9, loc_1800b4530	; 将寄存器 x9 的值和 0 比较，如果结果为 “非 0” 则跳转到 ‘loc_1800b4530’ 标签处开始指令
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>cmp：</strong> 比较指令，相当于 <code class="language-plaintext highlighter-rouge">subs</code>，影响程序状态寄存器 <em>CPSR</em> ;</p>
+  </li>
+  <li>
+    <p><strong>cset：</strong>比较指令，满足条件，则并置 <code class="language-plaintext highlighter-rouge">1</code>，否则置 <code class="language-plaintext highlighter-rouge">0</code> ，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cmp	 w8, #2    	; 将寄存器 w8 的值和常量 2 进行比较
+cset w8, gt			; 如果是大于(grater than)，则将寄存器 w8 的值设置为 1，否则设置为 0
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>LSL：</strong> 逻辑左移</p>
+  </li>
+  <li>
+    <p><strong>LSR：</strong> 逻辑右移</p>
+  </li>
+  <li>
+    <p><strong>ASR：</strong> 算术右移</p>
+  </li>
+  <li>
+    <p><strong>ROR：</strong> 循环右移</p>
+  </li>
+  <li>
+    <p><strong>adrp：</strong> 用来定位数据段中的数据用, 因为 <em>aslr</em> 会导致代码及数据的地址随机化, 用 <em>adrp</em> 来根据 pc指针做辅助定位。指令计算出指定标签的地址的页表基地址，并将这个基地址的高20位加载到目标寄存器中。由于 ARMv8 架构采用了 4KB 对齐的页表（Page），因此 <code class="language-plaintext highlighter-rouge">adrp</code> 指令的目的是为了加载目标标签所在页面的起始地址，而不是标签本身的地址。</p>
+  </li>
+  <li>
+    <p><strong>b：</strong> （branch）跳转到某地址（无返回）, 不会改变 <em>lr (x30)</em> 寄存器的值；一般是本方法内的跳转，如 <code class="language-plaintext highlighter-rouge">while</code> 循环，<code class="language-plaintext highlighter-rouge">if else</code> 等 ，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>b	LBB0_1				; 直接跳转到标签 ‘LLB0_1’ 处开始执行
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>bl：</strong> 跳转到某地址（有返回），先将下一指令地址（即函数返回地址）保存到寄存器 <em>lr</em> (x30)中，再进行跳转 ；一般用于不同方法直接的调用 ，如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>bl 0x100cfa754	; 先将下一指令地址（‘0x100cfa754’ 函数调用后的返回地址）保存到寄存器 ‘lr’ 中，然后再调用 ‘0x100cfa754’ 函数
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>blr：</strong> 跳转到 <code class="language-plaintext highlighter-rouge">某寄存器</code> (的值)指向的地址（有返回），先将下一指令地址（即函数返回地址）保存到寄存器 <em>lr</em> (x30)中，再进行跳转 ；如：</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>blr x20					; 先将下一指令地址（‘x20’指向的函数调用后的返回地址）保存到寄存器 ‘lr’ 中，然后再调用 ‘x20’ 指向的函数
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p><strong>br：</strong> 跳转到某寄存器(的值)指向的地址（无返回）, 不会改变 <em>lr (x30)</em> 寄存器的值。</p>
+  </li>
+  <li>
+    <p><strong>brk:</strong> 可以理解为跳转指令特殊的一种。</p>
+  </li>
+  <li>
+    <p><strong>ret：</strong> 子程序（函数调用）返回指令，返回地址已默认保存在寄存器 <em>lr</em> (x30) 中</p>
+  </li>
+</ul>
+
+<h2 id="3-实际案例分析">3 实际案例分析</h2>
+<hr />
+
+<blockquote>
+  <p>每个函数调用，都会有 <strong>入栈</strong> 和 <strong>出栈</strong> 操作。</p>
+</blockquote>
+
+<p>编写一个Demo程序，实现打印字符串，如下：</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">//test.c</span>
+<span class="cp">#include</span> <span class="cpf">&lt;stdio.h&gt;</span><span class="cp">
+</span>
+<span class="kt">void</span> <span class="nf">TestPushAndPop</span><span class="p">()</span>
+<span class="p">{</span>
+    <span class="n">printf</span><span class="p">(</span><span class="s">"Push an Pop !"</span><span class="p">);</span>
+<span class="p">}</span>	
+</code></pre></div></div>
+
+<p>使用gcc编译成汇编文件：<code class="language-plaintext highlighter-rouge">aarch64-linux-gnu-gcc -S -o test.s test.c</code></p>
+
+<pre><code class="language-asm">; test.s
+        .arch armv8-a	;架构
+        .file   "test.c"	;文件名称
+        .text	
+        .section        .rodata	;数据放到只读数据段
+        .align  3	;2^3对齐，8字节对齐
+.LC0:
+        .string "Push an Pop !"	;存储了一个字符串常量
+        .text 
+        .align  2
+        .global TestPushAndPop ;全局符号
+        .type   TestPushAndPop, %function
+TestPushAndPop: #label
+        stp     x29, x30, [sp, -16]! ;入栈指令 将x29,x30中的值存入sp(栈底)地址减16byte的位置 
+        add     x29, sp, 0	;将当前栈指针 sp 的值赋给寄存器 x29，即建立当前栈帧。
+        adrp    x0, .LC0 ;获取.LC0的基地址，并将这个基地址的高20位加载到目标寄存器x0中。
+        add     x0, x0, :lo12:.LC0
+        bl      printf	;调用 printf 函数，将寄存器 x0 中保存的字符串地址作为参数传递给 printf 函数。
+        nop	;空操作，用于占位，没有实际作用。
+        ldp     x29, x30, [sp], 16  ; 将栈中的值取出存放到x29, x30
+        ret	;返回
+        .size   TestPushAndPop, .-TestPushAndPop
+        .ident  "GCC: (Ubuntu/Linaro 7.5.0-3ubuntu1~18.04) 7.5.0"
+        .section        .note.GNU-stack,"",@progbits
+</code></pre>
+
+<p><strong>注意</strong>：对栈的  分配/释放  操作只会对栈指针做加减法, 而不会对栈内存中的内容做任何修改(也不会把释
+放的栈空间设置为 0)。</p>]]></content><author><name></name></author><category term="ARM" /><summary type="html"><![CDATA[ARMv8汇编基础介绍]]></summary></entry><entry><title type="html">Python3.6.9移植到i.MX6ULL</title><link href="http://localhost:4000/2024/04/15/Python3.6.9%E7%A7%BB%E6%A4%8D%E5%88%B0iMX6ULL/" rel="alternate" type="text/html" title="Python3.6.9移植到i.MX6ULL" /><published>2024-04-15T00:00:00+08:00</published><updated>2024-04-15T00:00:00+08:00</updated><id>http://localhost:4000/2024/04/15/Python3.6.9%E7%A7%BB%E6%A4%8D%E5%88%B0iMX6ULL</id><content type="html" xml:base="http://localhost:4000/2024/04/15/Python3.6.9%E7%A7%BB%E6%A4%8D%E5%88%B0iMX6ULL/"><![CDATA[<h1 id="移植python36到imx6ull">移植Python3.6到i.MX6ULL</h1>
+
+<h2 id="前期准备">前期准备</h2>
+
+<p>ARM平台: imx6ull linux 4.1.15<br />
+主机环境: Ubuntu 18.04 x86_64 (虚拟机)</p>
+
+<h2 id="移植流程">移植流程</h2>
+
+<ol>
+  <li>确定配置好交叉编译环境。<br />
+注意：如果未安装则安装SDK<code class="language-plaintext highlighter-rouge">sudo ./fsl-imx-x11-glibc-x86_64-meta-toolchain-qt5-cortexa7hf-neon-toolchain-4.1.15-2.0.0.sh</code></li>
+  <li>Python官网下载Python3.6。 <br />
+下载地址：<a href="https://www.python.org/downloads/source/">Python Source</a></li>
+  <li>将压缩包<code class="language-plaintext highlighter-rouge">Python-3.6.9.tgz</code>解压到Ubuntu18系统下的目录下。<br />
+<code class="language-plaintext highlighter-rouge">tar xvf Python-3.6.9.tgz</code></li>
+  <li>进入到<code class="language-plaintext highlighter-rouge">Python-3.6.9</code>文件夹下,并创建两个文件夹<code class="language-plaintext highlighter-rouge">build-arm</code>和<code class="language-plaintext highlighter-rouge">build-install</code>。
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">cd </span>Python-3.6.9
+<span class="nb">mkdir </span>build-arm build-install
+</code></pre></div>    </div>
+  </li>
+  <li>编译安装PC端的Python3.6.9。（Ubuntu18默认自带Python3.6.9，可以跳过此步，此文在移植的时候没有跳过这一步。如果系统安装的Python版本高于需要编译的版本则可以跳过，如果系统版本低于将要编译的版本则不能跳过）
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./configure
+make
+<span class="nb">sudo </span>make <span class="nb">install</span> 
+</code></pre></div>    </div>
+    <p><em>注意：</em><code class="language-plaintext highlighter-rouge">make</code>无需使用sudo,而<code class="language-plaintext highlighter-rouge">make install</code>需要sudo，不然没有权限安装Python到系统。</p>
+  </li>
+  <li>清除编译产生的临时文件。<br />
+<code class="language-plaintext highlighter-rouge">sudo make clean</code></li>
+  <li>交叉编译-配置Makefile.
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">cd </span>build-arm
+<span class="nb">.</span> /opt/fsl-imx-x11/4.1.15-2.0.0/environment-setup-cortexa7hf-neon-poky-linux-gnueabi
+<span class="c"># 此处CONFIG_SITE环境变量如果不加入则会在configure的时候打印出错 "#error LONG_SIZE"</span>
+<span class="nb">echo </span><span class="nv">ac_cv_file__dev_ptmx</span><span class="o">=</span>no <span class="o">&gt;</span> config.site
+<span class="nb">echo </span><span class="nv">ac_cv_file__dev_ptc</span><span class="o">=</span>no <span class="o">&gt;&gt;</span> config.site
+<span class="nb">export </span><span class="nv">CONFIG_SITE</span><span class="o">=</span>config.site
+<span class="c"># 配置参数</span>
+<span class="c"># --build=编译该软件所使用的平台,交叉编译环境根据系统而定，Ubuntu18选择x86_64-linux,如果系统使用的是Ubuntu的32位版本，可以配置成i386</span>
+<span class="c"># --host 该软件将运行的平台</span>
+<span class="c"># --target 该软件所处理的目标平台</span>
+<span class="c"># --prefix 文件安装的位置</span>
+<span class="c"># --silent 选项配置后终端不会打印详细的过程。</span>
+../configure <span class="se">\</span>
+<span class="nt">--host</span><span class="o">=</span>arm-poky-linux-gnueabi <span class="se">\</span>
+<span class="nt">--build</span><span class="o">=</span>x86_64-linux <span class="se">\</span>
+<span class="nt">--target</span><span class="o">=</span>arm-poky-linux-gnueabi <span class="se">\</span>
+<span class="nt">--disable-ipv6</span> <span class="se">\</span>
+<span class="nt">--prefix</span><span class="o">=</span>/home/neo/Desktop/fcu1104/Python-3.6.9/build-install <span class="se">\</span>
+<span class="nt">--enable-shared</span> <span class="nt">--enable-optimizations</span>
+</code></pre></div>    </div>
+  </li>
+  <li>添加ssl及zlib依赖的支持。已经在yocoto中拷贝出相应的文件。修改Setup文件<code class="language-plaintext highlighter-rouge">vi Modules/Setup</code>修改如下。
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c">#替换相关字段</span>
+<span class="nv">SSL</span><span class="o">=</span>/home/neo/Desktop/fcu1104/python3/openssl/usr
+_ssl _ssl.c <span class="se">\</span>
+     <span class="nt">-DUSE_SSL</span> <span class="nt">-I</span><span class="si">$(</span>SSL<span class="si">)</span>/include <span class="nt">-I</span><span class="si">$(</span>SSL<span class="si">)</span>/include/openssl <span class="se">\</span>
+     <span class="nt">-L</span><span class="si">$(</span>SSL<span class="si">)</span>/lib <span class="nt">-lssl</span> <span class="nt">-lcrypto</span>
+<span class="nv">mypath</span><span class="o">=</span>/home/neo/Desktop/fcu1104/python3/zlib
+zlib zlibmodule.c <span class="nt">-I</span><span class="si">$(</span>prefix<span class="si">)</span>/include <span class="nt">-L</span><span class="si">$(</span>mypath<span class="si">)</span>/lib <span class="nt">-lz</span>
+</code></pre></div>    </div>
+  </li>
+  <li>编译并安装。
+    <div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code>make 
+<span class="c"># make install过程中</span>
+make <span class="nb">install</span>
+</code></pre></div>    </div>
+  </li>
+</ol>
+
+<h2 id="问题汇总">问题汇总</h2>
+
+<ol>
+  <li>
+    <p>问题：使用交叉编译环境编译时报错<code class="language-plaintext highlighter-rouge">error: #error "LONG_BIT definition appears wrong for platform (bad gcc/glibc config?)."</code><br />
+解答：是因为没有配置CONFIG_SITE环境变量导致数据类型中的long型在configure时配置成了8Byte，而ARM环境上long型占用4Byte。参考：<a href="https://stackoverflow.com/questions/33745187/python-compilation-error-long-bit-definition-appears-wrong-for-platform/45971022">LONG_BIT</a></p>
+  </li>
+  <li>
+    <p>问题：<code class="language-plaintext highlighter-rouge">make install</code>命令时报错<code class="language-plaintext highlighter-rouge">subprocess.CalledProcessError: Command ‘(‘lsb_release’, ‘-a’)’ returned non-zero exit status 1.</code>
+解答：执行命令rm -rf /usr/bin/lsb_release可以解决这个问题，此时需要make clean下，然后再次执行make &amp; make install进行编译安装。</p>
+  </li>
+</ol>
+
+<h2 id="参考链接">参考链接</h2>
+
+<p><a href="https://blog.csdn.net/cyd411/article/details/100009336">python交叉编译移植到ARM</a><br />
+<a href="https://blog.csdn.net/yyw794/article/details/78059102">python移植到arm的单板</a>
+<a href="https://blog.csdn.net/whahu1989/article/details/86482669">交叉编译Python3.6</a>
+<a href="https://blog.csdn.net/u012230668/article/details/89206857">python3.7移植到ARM开发板</a></p>]]></content><author><name></name></author><category term="porting" /><summary type="html"><![CDATA[移植Python3.6到i.MX6ULL]]></summary></entry><entry><title type="html">4G模块ME909移植指南(鼎桥ME909s)</title><link href="http://localhost:4000/2024/04/15/4G%E6%A8%A1%E5%9D%97%E7%A7%BB%E6%A4%8D%E6%8C%87%E5%8D%97(%E9%BC%8E%E6%A1%A5ME909s)/" rel="alternate" type="text/html" title="4G模块ME909移植指南(鼎桥ME909s)" /><published>2024-04-15T00:00:00+08:00</published><updated>2024-04-15T00:00:00+08:00</updated><id>http://localhost:4000/2024/04/15/4G%E6%A8%A1%E5%9D%97%E7%A7%BB%E6%A4%8D%E6%8C%87%E5%8D%97(%E9%BC%8E%E6%A1%A5ME909s)</id><content type="html" xml:base="http://localhost:4000/2024/04/15/4G%E6%A8%A1%E5%9D%97%E7%A7%BB%E6%A4%8D%E6%8C%87%E5%8D%97(%E9%BC%8E%E6%A1%A5ME909s)/"><![CDATA[<h1 id="4g模块me909移植指南">4G模块ME909移植指南</h1>
+
+<h2 id="移植-td-tech-公司的-me909s-805p-4g模块">移植 TD-Tech 公司的 ME909s-805p 4G模块</h2>
+
+<blockquote>
+  <p>参考资料<br />
+《ME909s-805g LTE LGA模块Linux内核驱动集成指南（USB）.V1.1.pdf》<br />
+《鼎桥 ME909S-805G LTE LGA模块AT命令手册-V100R001_01-CHINESE.V1.0_0225.pdf》</p>
+</blockquote>
+
+<h3 id="添加at指令的支持">添加AT指令的支持</h3>
+
+<ol>
+  <li>添加option.c(<code class="language-plaintext highlighter-rouge">drivers/usb/serial/option.c</code>)文件对805p模组的支持。<br />
+在<code class="language-plaintext highlighter-rouge">static const struct usb_device_id option_ids[]</code>数组中增加模组USB的PID和VID。之后系统已经可以对接4G模块的USB-AT通道，可以和系统进行AT通信了。
+    <div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span> <span class="n">USB_DEVICE</span><span class="p">(</span><span class="mh">0x2ECC</span><span class="p">,</span> <span class="mh">0x3010</span><span class="p">)</span> <span class="p">},</span> <span class="cm">/* TD TECH ME909S-805P */</span>
+</code></pre></div>    </div>
+  </li>
+  <li>确保Linux的配置<code class="language-plaintext highlighter-rouge">arch/arm64/configs/imx_v8_defconfig</code>中加入了关于OPTION的驱动。<br />
+在配置文件中检查是否有如下配置项，有则不作修改，没有则在合适位置加入。
+    <div class="language-conf highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CONFIG_USB_SERIAL</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_SERIAL_WWAN</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_SERIAL_OPTION</span>=<span class="n">y</span>
+</code></pre></div>    </div>
+  </li>
+</ol>
+
+<h3 id="rndis方式上网配置">RNDIS方式上网配置</h3>
+
+<p>添加Linux对RNDIS驱动的支持。在配置<code class="language-plaintext highlighter-rouge">arch/arm64/configs/imx_v8_defconfig</code>中添加如下配置：</p>
+<div class="language-conf highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CONFIG_USB_USBNET</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_NET_DRIVERS</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_CONFIGFS_RNDIS</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_NET_RNDIS_HOST</span>=<span class="n">y</span>
+</code></pre></div></div>
+<p>完成上述工作后编译Linux内核烧录到板卡上即可支持805p模组。
+如果是ECM方式则生成的网络设备是<code class="language-plaintext highlighter-rouge">rndis_host</code>。</p>
+
+<h3 id="选配ecm方式上网配置">（选配）ECM方式上网配置</h3>
+
+<blockquote>
+  <p>ECM和RNDIS属于两种上网方式，两种上网方式选择任意一种即可。</p>
+</blockquote>
+
+<p>添加Linux对ECM驱动的支持。在配置<code class="language-plaintext highlighter-rouge">arch/arm64/configs/imx_v8_defconfig</code>中添加如下配置：</p>
+<div class="language-conf highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CONFIG_USB_USBNET</span>=<span class="n">y</span>
+<span class="n">CONFIG_NETDEVICES</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_NET_CDCETHER</span>=<span class="n">y</span>
+</code></pre></div></div>
+<p>如果是ECM方式则生成的网络设备是<code class="language-plaintext highlighter-rouge">cdc_ether</code>。</p>
+
+<h3 id="驻网">驻网</h3>
+
+<p>完成上述工作后系统即可支持4G模组上网。驻网方式如下：</p>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">stty</span> <span class="nt">-F</span> /dev/ttyUSB1 <span class="nt">-echo</span> <span class="c">#去除tty终端的回显功能，针对805p模组，如果不执行此步骤则会造成模组指令识别问题，陷入死循环</span>
+<span class="nb">echo</span> <span class="nt">-e</span> <span class="s2">"AT^SYSINFOEX</span><span class="se">\r</span><span class="s2">"</span> <span class="o">&gt;</span> /dev/ttyUSB1 <span class="c">#使用-e参数，转义转义字符\r。查询服务状态命令</span>
+    <span class="c">#^SYSINFOEX: 2,3,0,1,0,6,"LTE",101,"LTE"</span>
+    <span class="c"># PS 分组交换 数据 ；CS 电路交换 语音 ;MO 上行 ;MT 下行</span>
+<span class="nb">echo</span> <span class="nt">-e</span> <span class="s2">"AT+CGDCONT?"</span> <span class="o">&gt;</span> /dev/ttyUSB1 <span class="c">#查询PDP上下文</span>
+    <span class="c">#+CGDCONT: 1,"IPV4V6","3gnet.MNC001.MCC460.GPRS"</span>
+    <span class="c">#+CGDCONT: 2,"IP","3gnet","10.128.130.99",0,0,,,,</span>
+    <span class="c">#+CGDCONT: 8,"IPV4V6","IMS","fe80::166c:bca0:9de9:f1ab",0,0,0,2,1,1</span>
+    <span class="c">#NDISDUP拨号时用CID2，CID1目前是是作为默认承载用的</span>
+<span class="nb">echo</span> <span class="nt">-e</span> <span class="s2">"AT^NDISDUP=2,1,"</span>CTNET<span class="s2">""</span> <span class="o">&gt;</span> /dev/ttyUSB1 <span class="c">#命令拨号</span>
+    <span class="c">#3GNET</span>
+    <span class="c">#CMNET</span>
+    <span class="c">#CTNET</span>
+ifconfig eth0 down <span class="c">#关闭其他网络节点，未验证是否有必要这么做</span>
+udhcpc <span class="nt">-ieth1</span> <span class="c">#动态获取</span>
+</code></pre></div></div>
+<p>之后可以正常上网。</p>
+
+<h2 id="关于805p的专有说明">关于805p的专有说明</h2>
+
+<ul>
+  <li>设备tty端口含义
+    <pre><code class="language-txt">ttyUSB0：DIAG 
+ttyUSB1：AT 
+ttyUSB2：MODEM  
+</code></pre>
+  </li>
+  <li>LTE的信号质量如何查看<br />
+在3/4g下查询当前RSCP/RSRP，当小于-105dBm的时候，数据业务很难成功。<code class="language-plaintext highlighter-rouge">^HCSQ: "LTE",31,71,0,13</code>也就是上述的信息中看信号的第二个值。范围如下:
+    <pre><code class="language-txt">  0  rsrp &lt; -140 dBm 
+  1  -140 dBm ≤ rsrp &lt; - 139 dBm 
+  2  -139 dBm ≤ rsrp &lt; -138 dBm 
+  ... 
+  71 -70 dBm ~ -69 dBm
+    
+  95  -46 dBm ≤ rsrp &lt; -45 dBm 
+  96  -45 dBm ≤ rsrp &lt; -44 dBm 
+  97  -44 dBm ≤ rsrp 
+  255  未知或不可测 
+</code></pre>
+    <p>说明上述 <code class="language-plaintext highlighter-rouge">71</code>信号还是不错的</p>
+  </li>
+</ul>
+
+<h2 id="补充">补充</h2>
+<p>当CREG、CGREG没有注册上时，是无法做相关业务的。<br />
+当CSQ、HCSQ信号值过低的时候也是无法做相关业务的。<br />
+当业务掉线后，必须重新查询CREG、CGREG、CSQ、HCSQ，当满足做业务的基本要求时，在发起相关操作。</p>]]></content><author><name></name></author><category term="4G" /><summary type="html"><![CDATA[4G模块ME909移植指南]]></summary></entry><entry><title type="html">First page</title><link href="http://localhost:4000/2024/04/13/First/" rel="alternate" type="text/html" title="First page" /><published>2024-04-13T00:00:00+08:00</published><updated>2024-04-13T00:00:00+08:00</updated><id>http://localhost:4000/2024/04/13/First</id><content type="html" xml:base="http://localhost:4000/2024/04/13/First/"><![CDATA[<p>Hello AI</p>]]></content><author><name></name></author><category term="Linux" /><summary type="html"><![CDATA[Hello AI]]></summary></entry><entry><title type="html">N1盒子做旁路由刷OpenWRT系统</title><link href="http://localhost:4000/2024/04/13/N1%E7%9B%92%E5%AD%90%E5%81%9A%E6%97%81%E8%B7%AF%E7%94%B1%E5%88%B7OpenWRT%E7%B3%BB%E7%BB%9F/" rel="alternate" type="text/html" title="N1盒子做旁路由刷OpenWRT系统" /><published>2024-04-13T00:00:00+08:00</published><updated>2024-04-13T00:00:00+08:00</updated><id>http://localhost:4000/2024/04/13/N1%E7%9B%92%E5%AD%90%E5%81%9A%E6%97%81%E8%B7%AF%E7%94%B1%E5%88%B7OpenWRT%E7%B3%BB%E7%BB%9F</id><content type="html" xml:base="http://localhost:4000/2024/04/13/N1%E7%9B%92%E5%AD%90%E5%81%9A%E6%97%81%E8%B7%AF%E7%94%B1%E5%88%B7OpenWRT%E7%B3%BB%E7%BB%9F/"><![CDATA[<h1 id="n1盒子做旁路由刷openwrt系统">N1盒子做旁路由刷OpenWRT系统</h1>
+
+<h2 id="1-为什么要用n1盒子">1 为什么要用N1盒子</h2>
+
+<ol>
+  <li>
+    <p>现如今新上市的路由器，市面上能买到的300元以内的路由器大多数都是双频(5G Hz和2.4G Hz)和几年前相比无论是速度还是性能都有大幅度提升，作为普通用户已经能满足上网需求。但是由于部分用户对网络环境有其他需求例如，本地NAS存储，可以实现为一台不限速的网络存储，省去随身携带U盘；亦或是实现某些网站的自动签到；再或者实现去广告上网等等等等。</p>
+  </li>
+  <li>
+    <p><strong>使用普通路由器不可以吗？</strong>由于需要的功能较多，现有路由器在运算和存储容量上都已经无法满足需求，就需要有一台本地的高性能路由器，软路由应运而生，既能解决特殊需求，也不影响网络质量。</p>
+  </li>
+  <li>
+    <p><strong>直接买软路由不就得了，N1盒子有什么优势？</strong>由于软路由使用基本上是针对企业或者电子发烧友，普通家庭宽带要求速率不是很高，500M带宽用起来也是绰绰有余，家里也没有较多的网络设备，一来使用多口软路由有些浪费，软路由低配基本也要300元左右，耗电量高不说，多余的网络接口也没啥用，个头也大等等诸多原因，N1对于一般玩家完全够用。</p>
+  </li>
+</ol>
+
+<h2 id="2-n1盒子是什么">2 N1盒子是什么</h2>
+
+<ul>
+  <li>
+    <p>N1盒子是2018年初斐讯公司推出的一款天天链终端，用来做本地NAS(矿机)使用的，由于某些原因公司倒闭，N1盒子也无法使用，淘宝、京东等平台纷纷下架。由于设计N1的时候是为了计算，所以N1盒子在同领域算是性能较高且第三方源码及维护也比较及时，可以说是当今一款性价比较高的产品。</p>
+  </li>
+  <li>
+    <p>N1盒子配置如下：</p>
+  </li>
+</ul>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>SoC - Allogic S905D 64bit 4Core Cortex-A53 1.5G Hz
+GPU - Mali-450
+RAM - 2GB
+ROM - 8GB eMMC
+WIFI - 2.4G/5G
+蓝牙 - BT4.1
+电源 - 5V/2A
+网口 - 千兆网口
+HDMI - 支持4K输出
+USB - USB2.0 x2
+</code></pre></div></div>
+
+<h2 id="3-使用的工具及资源下载地址">3 使用的工具及资源下载地址</h2>
+
+<ol>
+  <li>电脑</li>
+  <li>N1盒子</li>
+  <li>HDMI线</li>
+  <li>显示器或者电视</li>
+  <li>路由器（将路由器提前改为123网段：IP：192.168.123.1）</li>
+  <li>USB公对公线（可能用不到，最好备上一条）</li>
+  <li>USB2.0 U盘</li>
+  <li>网线一根</li>
+  <li>N1盒子电源</li>
+  <li><a href="https://www.right.com.cn/forum/thread-3160780-1-1.html">OpenWRT固件</a>介绍固件的特性及固件相关信息。<a href="https://pan.baidu.com/share/init?surl=bnigZ0cQTBY6pzo0saP1nQ">百度网盘</a>下载密码（6n4k）；或者<a href="https://drive.google.com/drive/folders/1Gn2hMw2G6I_LgC8MlWFx_n9GDCbb9a14">谷歌网盘</a></li>
+  <li><a href="https://www.lanzous.com/ia9fgdi">降级工具+设置U盘启动工具</a></li>
+</ol>
+
+<h2 id="4-刷机">4 刷机</h2>
+
+<ol>
+  <li>接通连线如下：</li>
+</ol>
+
+<p><img src="/pics/N1/flash.png" alt="刷机" /></p>
+
+<ol>
+  <li><strong>降级：</strong></li>
+</ol>
+
+<p>开机后记录下N1盒子上被路由器DHCP分配的IP地址。</p>
+
+<p>按照<a href="https://www.right.com.cn/forum/thread-340279-1-1.html">降级教程</a>操作降级。注意：一定保证电脑和N1在同一个网段里。</p>
+
+<ol>
+  <li><strong>制作镜像U盘：</strong></li>
+</ol>
+
+<p>使用[balenaEtcher]工具将OpenWRT镜像写入U盘里，U盘里的东西会被格式化，请做好备份。</p>
+
+<ol>
+  <li><strong>设置盒子U盘启动：</strong></li>
+</ol>
+
+<p>将写好系统的U盘插入靠近HDMI口的U盘，然后使用U盘启动工具提示输入N1盒子的地址，大部分情况还是最初路由器DHCP分配的IP地址。之后N1会自动重启，屏幕会显示OpenWRT启动信息，此时即可在浏览器输入192.168.123.2即可进入后台界面。</p>
+
+<ol>
+  <li><strong>设置eMMC启动：</strong></li>
+</ol>
+
+<p>进入下图的TTYD界面，输入用户名：root密码：password。按照<a href="https://www.right.com.cn/forum/thread-3160780-1-1.html">OpenWRT固件</a>文末方法设置将OpenWRT从U盘写入到eMMC。
+<img src="/pics/N1/ttyd.png" alt="TTYD" /></p>
+
+<ol>
+  <li>
+    <p>重启</p>
+  </li>
+  <li>
+    <p>拔掉U盘</p>
+  </li>
+  <li>
+    <p>浏览器输入192.168.123.2进入网页管理后台</p>
+  </li>
+</ol>
+
+<h2 id="配置openwrt">配置OpenWRT</h2>
+
+<ol>
+  <li>
+    <p><strong>连接图：</strong>
+<img src="/pics/N1/connect.png" alt="接线图" /></p>
+  </li>
+  <li>
+    <p>浏览器输入192.168.123.1进入路由器后台，关闭DHCP服务(不同路由器设置网上查一查)</p>
+  </li>
+  <li>
+    <p>浏览器输入192.168.123.2进入N1后台，做如下操作：</p>
+  </li>
+</ol>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>网络 - 接口 - Lan口
+1. 把Lan口的IPV4地址改到与AP一样的网段(默认是IP192.168.123.2，如果不是可以设置成此IP)
+2. 把Lan口的DNS服务器、网关都填写为AP的静态网络地址IP:192.168.123.1
+3. 下面的DHCP，点到第二个选项卡，把“强制”勾上，强制用N1作为DHCP服务器
+   网络 - 防火墙 - 自定义规则
+4.增加一条规则：iptables -t nat -I POSTROUTING -o eth0 -j MASQUERADE
+</code></pre></div></div>
+
+<h2 id="结束">结束</h2>
+
+<p>本文只介绍了将N1设置为旁路由的方法，N1还可以作为电视盒子、游戏主机等多种玩法，感兴趣的网友再自行研究。后续将介绍OpenWRT的使用方法。</p>
+
+<p>针对文章有疑问的地方请联系bkxr#outlook.com</p>]]></content><author><name></name></author><category term="router" /><summary type="html"><![CDATA[N1盒子做旁路由刷OpenWRT系统]]></summary></entry></feed>

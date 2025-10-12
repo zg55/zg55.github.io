@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<!-- <script src="https://cdn1.lncld.net/static/js/av-min-1.5.0.js"></script> -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-J5XCF4GCJ8"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-J5XCF4GCJ8');
+</script>
+<title>4G模块ME909移植指南(鼎桥ME909s)</title>
+
+
+        <link rel="stylesheet" href="http://localhost:4000/styles/font.css">
+        <link rel="stylesheet" media="screen and (min-width: 600px)" href="http://localhost:4000/styles/post.css">
+        <link rel="stylesheet" media="screen and (max-width: 600px)" href="http://localhost:4000/styles/post_mobile.css">
+        <link rel="stylesheet" media="screen and (min-width: 600px)" href="http://localhost:4000/styles/navigatebar.css">
+        <link rel="stylesheet" media="screen and (max-width: 600px)" href="http://localhost:4000/styles/navigatebar_mobile.css">
+        <link rel="stylesheet" href="http://localhost:4000/theme/highlight.css">
+    </head>
+    <body>
+        <div class="navigatebar">
+    <div class="navigatebar-button navigatebar-mine">
+        <a href="http://localhost:4000/index.html">Home</a>
+    </div>
+    <div class="navigatebar-button">
+        <a href="http://localhost:4000/tags.html">Tags</a>
+    </div>
+    <div class="navigatebar-button">
+        <a href="http://localhost:4000/feed.xml">Feeds</a>
+    </div>
+    <div class="navigatebar-button navigatebar-about">
+        <a href="http://localhost:4000/about.html">About</a>
+    </div>
+</div>
+
+        <div class="content-area">
+            <div class="title">
+                4G模块ME909移植指南(鼎桥ME909s)
+            </div>
+            <div class="category-area">
+                「
+                <a href="http://localhost:4000/tags.html#4G">
+                    <div class="category">
+                        4G
+                    </div>
+                </a>
+                」
+            </div>
+            <div class="char-counter">
+              2024-04-15 1993字
+            </div>
+            <div class="content">
+                <h1 id="4g模块me909移植指南">4G模块ME909移植指南</h1>
+
+<h2 id="移植-td-tech-公司的-me909s-805p-4g模块">移植 TD-Tech 公司的 ME909s-805p 4G模块</h2>
+
+<blockquote>
+  <p>参考资料<br />
+《ME909s-805g LTE LGA模块Linux内核驱动集成指南（USB）.V1.1.pdf》<br />
+《鼎桥 ME909S-805G LTE LGA模块AT命令手册-V100R001_01-CHINESE.V1.0_0225.pdf》</p>
+</blockquote>
+
+<h3 id="添加at指令的支持">添加AT指令的支持</h3>
+
+<ol>
+  <li>添加option.c(<code class="language-plaintext highlighter-rouge">drivers/usb/serial/option.c</code>)文件对805p模组的支持。<br />
+在<code class="language-plaintext highlighter-rouge">static const struct usb_device_id option_ids[]</code>数组中增加模组USB的PID和VID。之后系统已经可以对接4G模块的USB-AT通道，可以和系统进行AT通信了。
+    <div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span> <span class="n">USB_DEVICE</span><span class="p">(</span><span class="mh">0x2ECC</span><span class="p">,</span> <span class="mh">0x3010</span><span class="p">)</span> <span class="p">},</span> <span class="cm">/* TD TECH ME909S-805P */</span>
+</code></pre></div>    </div>
+  </li>
+  <li>确保Linux的配置<code class="language-plaintext highlighter-rouge">arch/arm64/configs/imx_v8_defconfig</code>中加入了关于OPTION的驱动。<br />
+在配置文件中检查是否有如下配置项，有则不作修改，没有则在合适位置加入。
+    <div class="language-conf highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CONFIG_USB_SERIAL</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_SERIAL_WWAN</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_SERIAL_OPTION</span>=<span class="n">y</span>
+</code></pre></div>    </div>
+  </li>
+</ol>
+
+<h3 id="rndis方式上网配置">RNDIS方式上网配置</h3>
+
+<p>添加Linux对RNDIS驱动的支持。在配置<code class="language-plaintext highlighter-rouge">arch/arm64/configs/imx_v8_defconfig</code>中添加如下配置：</p>
+<div class="language-conf highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CONFIG_USB_USBNET</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_NET_DRIVERS</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_CONFIGFS_RNDIS</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_NET_RNDIS_HOST</span>=<span class="n">y</span>
+</code></pre></div></div>
+<p>完成上述工作后编译Linux内核烧录到板卡上即可支持805p模组。
+如果是ECM方式则生成的网络设备是<code class="language-plaintext highlighter-rouge">rndis_host</code>。</p>
+
+<h3 id="选配ecm方式上网配置">（选配）ECM方式上网配置</h3>
+
+<blockquote>
+  <p>ECM和RNDIS属于两种上网方式，两种上网方式选择任意一种即可。</p>
+</blockquote>
+
+<p>添加Linux对ECM驱动的支持。在配置<code class="language-plaintext highlighter-rouge">arch/arm64/configs/imx_v8_defconfig</code>中添加如下配置：</p>
+<div class="language-conf highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">CONFIG_USB_USBNET</span>=<span class="n">y</span>
+<span class="n">CONFIG_NETDEVICES</span>=<span class="n">y</span>
+<span class="n">CONFIG_USB_NET_CDCETHER</span>=<span class="n">y</span>
+</code></pre></div></div>
+<p>如果是ECM方式则生成的网络设备是<code class="language-plaintext highlighter-rouge">cdc_ether</code>。</p>
+
+<h3 id="驻网">驻网</h3>
+
+<p>完成上述工作后系统即可支持4G模组上网。驻网方式如下：</p>
+<div class="language-sh highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nb">stty</span> <span class="nt">-F</span> /dev/ttyUSB1 <span class="nt">-echo</span> <span class="c">#去除tty终端的回显功能，针对805p模组，如果不执行此步骤则会造成模组指令识别问题，陷入死循环</span>
+<span class="nb">echo</span> <span class="nt">-e</span> <span class="s2">"AT^SYSINFOEX</span><span class="se">\r</span><span class="s2">"</span> <span class="o">&gt;</span> /dev/ttyUSB1 <span class="c">#使用-e参数，转义转义字符\r。查询服务状态命令</span>
+    <span class="c">#^SYSINFOEX: 2,3,0,1,0,6,"LTE",101,"LTE"</span>
+    <span class="c"># PS 分组交换 数据 ；CS 电路交换 语音 ;MO 上行 ;MT 下行</span>
+<span class="nb">echo</span> <span class="nt">-e</span> <span class="s2">"AT+CGDCONT?"</span> <span class="o">&gt;</span> /dev/ttyUSB1 <span class="c">#查询PDP上下文</span>
+    <span class="c">#+CGDCONT: 1,"IPV4V6","3gnet.MNC001.MCC460.GPRS"</span>
+    <span class="c">#+CGDCONT: 2,"IP","3gnet","10.128.130.99",0,0,,,,</span>
+    <span class="c">#+CGDCONT: 8,"IPV4V6","IMS","fe80::166c:bca0:9de9:f1ab",0,0,0,2,1,1</span>
+    <span class="c">#NDISDUP拨号时用CID2，CID1目前是是作为默认承载用的</span>
+<span class="nb">echo</span> <span class="nt">-e</span> <span class="s2">"AT^NDISDUP=2,1,"</span>CTNET<span class="s2">""</span> <span class="o">&gt;</span> /dev/ttyUSB1 <span class="c">#命令拨号</span>
+    <span class="c">#3GNET</span>
+    <span class="c">#CMNET</span>
+    <span class="c">#CTNET</span>
+ifconfig eth0 down <span class="c">#关闭其他网络节点，未验证是否有必要这么做</span>
+udhcpc <span class="nt">-ieth1</span> <span class="c">#动态获取</span>
+</code></pre></div></div>
+<p>之后可以正常上网。</p>
+
+<h2 id="关于805p的专有说明">关于805p的专有说明</h2>
+
+<ul>
+  <li>设备tty端口含义
+    <pre><code class="language-txt">ttyUSB0：DIAG 
+ttyUSB1：AT 
+ttyUSB2：MODEM  
+</code></pre>
+  </li>
+  <li>LTE的信号质量如何查看<br />
+在3/4g下查询当前RSCP/RSRP，当小于-105dBm的时候，数据业务很难成功。<code class="language-plaintext highlighter-rouge">^HCSQ: "LTE",31,71,0,13</code>也就是上述的信息中看信号的第二个值。范围如下:
+    <pre><code class="language-txt">  0  rsrp &lt; -140 dBm 
+  1  -140 dBm ≤ rsrp &lt; - 139 dBm 
+  2  -139 dBm ≤ rsrp &lt; -138 dBm 
+  ... 
+  71 -70 dBm ~ -69 dBm
+    
+  95  -46 dBm ≤ rsrp &lt; -45 dBm 
+  96  -45 dBm ≤ rsrp &lt; -44 dBm 
+  97  -44 dBm ≤ rsrp 
+  255  未知或不可测 
+</code></pre>
+    <p>说明上述 <code class="language-plaintext highlighter-rouge">71</code>信号还是不错的</p>
+  </li>
+</ul>
+
+<h2 id="补充">补充</h2>
+<p>当CREG、CGREG没有注册上时，是无法做相关业务的。<br />
+当CSQ、HCSQ信号值过低的时候也是无法做相关业务的。<br />
+当业务掉线后，必须重新查询CREG、CGREG、CSQ、HCSQ，当满足做业务的基本要求时，在发起相关操作。</p>
+
+
+            </div>
+        </div>
+    </body>
+</html>
